@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <style>
+      body {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding-bottom: 50px;
+      }
+
+      #loadingContainer {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: center;
+        padding: 10px;
+      }
+
+      #loadingContainer img {
+        padding: 20px;
+        animation: spin 0.5s linear infinite;
+      }
+
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      #board {
+        border: 7px solid black;
+        border-collapse: collapse;
+        height: min(80vh, 80vw);
+        width: min(80vh, 80vw);
+        margin-bottom: 20px;
+        font-family: Calibri, sans-serif;
+      }
+
+      colgroup,
+      tbody {
+        border: 5px solid #0350ba;
+      }
+
+      td {
+        border: solid thin;
+        text-align: center;
+        padding: 0;
+      }
+
+      #victory {
+        color: green;
+        font-weight: bold;
+        display: none;
+      }
+
+      .selected {
+        background-color: #bbb2e9;
+      }
+
+      .controls {
+        width: 50vw;
+        display: flex;
+        flex-direction: row;
+        align-items: start;
+        justify-content: space-evenly;
+      }
+
+      .controls-section {
+        display: flex;
+        flex-direction: column;
+      }
+    </style>
+    <title>Yet Another Sudoku</title>
+  </head>
+
+  <body>
+    <h1>Yet Another Sudoku!</h1>
+    <h3
+      id="victory"
+      style="display: noneloadingContainee"
+    >
+      VICITORY
+    </h3>
+    <small>Click a spot and enter a number (enter 0 to clear)</small>
+    <small>Scroll down for controls</small>
+
+    <div id="loadingContainer">
+      <img
+        src="./snek.gif"
+        alt="a cute, pixelated, snek"
+      /><b>Loading...</b>
+    </div>
+
+    <br />
+    <table id="board"></table>
+
+    <div class="controls">
+      <div class="controls-section">
+        Load board from file:
+        <input
+          id="file-upload"
+          type="file"
+          accept="json"
+        />
+        <button id="load-btn">Reload</button>
+      </div>
+      <div class="controls-section">
+        <button id="solve-btn">Run Solver</button>
+      </div>
+    </div>
+  </body>
+</html>
+
+<script>
+  let selectedCoords = undefined;
+  let board;
+  let boardTdElts;
+
+  function startLoading() {
+    document.getElementById('loadingContainer').style.display = 'flex';
+  }
+  function stopLoading() {
+    document.getElementById('loadingContainer').style.display = 'none';
+  }
+
+  function makeBoard() {
+    const boardElt = document.getElementById('board');
+    boardElt.innerHTML = '';
+
+    // create js array
+    boardTdElts = [];
+    board = [];
+    for (let i = 0; i < 9; i++) {
+      board.push([]);
+      boardTdElts.push([]);
+      for (let j = 0; j < 9; j++) {
+        board[i].push(0);
+        boardTdElts[i].push(undefined);
+      }
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const colgroupElt = document.createElement('colgroup');
+      boardElt.appendChild(colgroupElt);
+      for (let j = 0; j < 3; j++) {
+        const colElt = document.createElement('col');
+        colgroupElt.appendChild(colElt);
+      }
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const tbodyElt = document.createElement('tbody');
+      boardElt.appendChild(tbodyElt);
+      for (let j = 0; j < 3; j++) {
+        const trElt = document.createElement('tr');
+        tbodyElt.appendChild(trElt);
+        for (let k = 0; k < 9; k++) {
+          const tdElt = document.createElement('td');
+          tdElt.style.width = `min(${80 / 9}vh, ${80 / 9}vw)`;
+          tdElt.style.height = `min(${80 / 9}vh, ${80 / 9}vw)`;
+          // tdElt.innerHTML = `${i * 3 + j}_${k}`;
+
+          const [r, c] = [i * 3 + j, k];
+          tdElt.addEventListener('click', () => toggleEltSelect(tdElt, [r, c]));
+          trElt.appendChild(tdElt);
+          boardTdElts[r][c] = tdElt;
+        }
+      }
+    }
+  }
+
+  const victoryEle = document.getElementById('victory');
+  function toggleVictory(val) {
+    victoryEle.style.display = val ? 'block' : 'none';
+  }
+
+  function coordsEq(c1, c2) {
+    return c1 && c2 && c1[0] == c2[0] && c1[1] == c2[1];
+  }
+
+  function toggleEltSelect(tdElt, coords) {
+    if (coordsEq(selectedCoords, coords)) {
+      tdElt.classList.remove('selected');
+      selectedCoords = undefined;
+    } else {
+      tdElt.classList.add('selected');
+      if (selectedCoords) {
+        const [r, c] = selectedCoords;
+        boardTdElts[r][c].classList.remove('selected');
+      }
+      selectedCoords = coords;
+    }
+  }
+
+  async function victoryCheck() {
+    myFetch('/victory_check', board).then((r) =>
+      toggleVictory(r.victory === true),
+    );
+  }
+
+  function badUpload(reason) {
+    console.log(reason);
+  }
+
+  function useBoard(newBoard) {
+    if (newBoard === undefined) {
+      newBoard = loadedBoard;
+    }
+    if (!newBoard) return;
+    makeBoard();
+    for (let r = 0; r < 9; r++) {
+      for (let c = 0; c < 9; c++) {
+        const v = newBoard[r][c];
+        board[r][c] = v;
+        boardTdElts[r][c].innerHTML = v ? v : '';
+      }
+    }
+    victoryCheck();
+  }
+
+  async function myFetch(loc, body) {
+    try {
+      const response = await fetch(loc, {
+        method: 'POST',
+        cache: 'no-cache',
+        redirect: 'follow',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (response.ok) {
+        return await response.json();
+      } else {
+        return { error: await response.text() };
+      }
+    } catch (e) {
+      return {
+        error: await 'Could not communicate with the server. Is it running?',
+        off: true,
+      };
+    }
+  }
+
+  async function runSolver() {
+    startLoading();
+    const solvedBoard = await myFetch('/solve', board);
+    if (solvedBoard === null) {
+      alert('could not solve this board!');
+      stopLoading();
+      return;
+    }
+    if (solvedBoard.error) {
+      if (solvedBoard.off === true) {
+        alert('could not communicate with the server!  is it running?');
+      } else {
+        alert(
+          'an error occurred!  please check the terminal for more information',
+        );
+      }
+      return;
+    }
+    useBoard(solvedBoard);
+    stopLoading();
+  }
+
+  const fileElt = document.getElementById('file-upload');
+  let loadedBoard = undefined;
+  fileElt.addEventListener('change', async (ev) => {
+    // parse json
+    const reader = new FileReader();
+    const file = ev.target.files[0];
+
+    reader.addEventListener('load', (ev) => {
+      loadedBoard = JSON.parse(ev.target.result);
+      if (!(loadedBoard instanceof Array) || loadedBoard.length != 9)
+        return badUpload('json file must be a 2D(9*9) array');
+      const n = loadedBoard.length;
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          if (isNaN(loadedBoard[r][c]))
+            return badUpload(`Bad element at r=${r},c=${c}`);
+        }
+      }
+      useBoard(loadedBoard);
+    });
+
+    reader.readAsText(file);
+  });
+
+  document.getElementById('load-btn').addEventListener('click', useBoard);
+  document.getElementById('solve-btn').addEventListener('click', runSolver);
+
+  document.addEventListener('keypress', async (ev) => {
+    const key = ev.key;
+    const v = parseInt(key);
+    if (isNaN(v) || selectedCoords === undefined || v > 9 || v < 0) return;
+    const [r, c] = selectedCoords;
+    boardTdElts[r][c].innerHTML = v == 0 ? '' : v;
+    board[r][c] = v;
+    toggleEltSelect(boardTdElts[r][c], selectedCoords);
+    await victoryCheck();
+  });
+
+  makeBoard();
+  stopLoading();
+</script>
